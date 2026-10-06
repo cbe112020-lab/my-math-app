@@ -3,98 +3,197 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>前後端測試 MVP</title>
+    <title>🌌 量子退火旅遊行程規劃系統</title>
+    <!-- 使用 Bootstrap 5 CSS 進行網頁佈局美化 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f4f4f9;
-        }
-        .card {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-            text-align: center;
-            width: 300px;
-        }
-        input {
-            width: 80%;
-            padding: 10px;
-            margin: 10px 0;
-            font-size: 16px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-        }
-        button {
-            width: 88%;
-            padding: 10px;
-            font-size: 16px;
-            color: white;
-            background-color: #007bff;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        .result {
-            margin-top: 20px;
-            font-size: 18px;
-            font-weight: bold;
-            color: #333;
-        }
+        body { background-color: #f8f9fa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        .card-custom { border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: none; }
+        .badge-quantum { background-color: #0d6efd; font-size: 0.9rem; }
+        .route-step-card { background-color: #ffffff; border-left: 5px solid #0d6efd; margin-bottom: 15px; transition: transform 0.2s; }
+        .route-step-card:hover { transform: translateY(-2px); }
+        .travel-info { background-color: #e9ecef; border-radius: 8px; font-size: 0.88rem; color: #495057; }
     </style>
 </head>
 <body>
 
-    <div class="card">
-        <h2>數字計算機 (*10 + 2)</h2>
-        <input type="number" id="numInput" placeholder="請輸入數字">
-        <button onclick="calculate()">送出計算</button>
-        <div class="result" id="resultText">結果：--</div>
+<div class="container py-5">
+    <!-- 標題區 -->
+    <div class="text-center mb-5">
+        <h1 class="fw-bold text-dark">⚛️ 量子退火旅遊行程規劃系統</h1>
+        <p class="text-muted fs-6">Gemini AI 動態搜尋 + Google Maps 雙矩陣 + 6 式 QUBO 模擬退火優化</p>
     </div>
 
-    <script>
-        async function calculate() {
-            const inputVal = document.getElementById('numInput').value;
-            const resultText = document.getElementById('resultText');
+    <!-- 1. 輸入參數表單 -->
+    <div class="row justify-content-center mb-4">
+        <div class="col-md-9">
+            <div class="card card-custom p-4 bg-white">
+                <form id="planForm">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label for="city" class="form-label fw-bold">欲規劃城市</label>
+                            <input type="text" class="form-control" id="city" value="高雄" placeholder="例如：高雄、台北、京都" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="budget" class="form-label fw-bold">目標預算 (元)</label>
+                            <input type="number" class="form-control" id="budget" value="600" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="target_time" class="form-label fw-bold">目標總時間 (分鐘)</label>
+                            <input type="number" class="form-control" id="target_time" value="600" required>
+                        </div>
+                    </div>
+                    <div class="mt-4 text-center">
+                        <button type="submit" class="btn btn-primary btn-lg px-5 fw-bold shadow-sm" id="submitBtn">
+                            🚀 開始量子退火優化求解
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-            if (inputVal === "") {
-                resultText.innerText = "請先輸入數字！";
-                return;
+    <!-- 2. Loading 載入等待動畫 -->
+    <div id="loading" class="text-center d-none my-5">
+        <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+        <h5 class="fw-bold text-dark">Gemini 搜尋景點中 & 進行 6 式 QUBO 量子退火運算...</h5>
+        <p class="text-muted small">這需要呼叫真實 Google Distance Matrix 矩陣，請耐心等待約 10~20 秒</p>
+    </div>
+
+    <!-- 3. 運算結果展示區 -->
+    <div id="resultContainer" class="row justify-content-center d-none">
+        <div class="col-md-9">
+            <!-- 數據統計卡片區 -->
+            <div class="card card-custom p-4 mb-4 bg-white">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">📊 行程優化統計面板</h5>
+                    <span class="badge badge-quantum px-3 py-2" id="algoName">PyQUBO + Neal</span>
+                </div>
+                <div class="row text-center g-3" id="statsCards">
+                    <!-- JavaScript 將動態填入內容 -->
+                </div>
+            </div>
+
+            <!-- 最佳行程路線圖列表 -->
+            <div class="card card-custom p-4 bg-white">
+                <h5 class="fw-bold mb-3 border-bottom pb-2">🗓️ 【<span id="targetCityName"></span>】最佳退火推薦路線表</h5>
+                <div id="itineraryList">
+                    <!-- JavaScript 將動態填入路線內容 -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ⚠️ 請確認你的 Render API 後端網址 (若前後端在同個 Render Web Service 則保留 '/api/plan_trip' 即可)
+    const API_URL = 'https://my-math-app-n44r.onrender.com/api/plan_trip';
+
+    document.getElementById('planForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const city = document.getElementById('city').value.trim();
+        const budget = parseFloat(document.getElementById('budget').value);
+        const target_time = parseFloat(document.getElementById('target_time').value);
+
+        // 控制 UI 狀態
+        document.getElementById('loading').classList.remove('d-none');
+        document.getElementById('resultContainer').classList.add('d-none');
+        document.getElementById('submitBtn').disabled = true;
+
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ city, budget, target_time })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.status === 'success') {
+                renderResults(data);
+            } else {
+                alert('求解失敗: ' + (data.error || data.message || '未知錯誤'));
             }
-
-            resultText.innerText = "計算中...";
-
-            try {
-                // 發送請求到 Render 後端 API
-                const response = await fetch("https://my-math-app-n44r.onrender.com/api/calculate", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ number: parseFloat(inputVal) })
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    resultText.innerText = `結果：${data.result}`;
-                } else {
-                    resultText.innerText = `錯誤：${data.error || '無法完成計算'}`;
-                }
-            } catch (error) {
-                console.error("Error:", error);
-                resultText.innerText = "連線失敗，請檢查 API！";
-            }
+        } catch (err) {
+            console.error("API 連線錯誤:", err);
+            alert('連線失敗，請確認 Render 後端伺服器是否在線上（剛醒來可能需等待幾十秒）。');
+        } finally {
+            document.getElementById('loading').classList.add('d-none');
+            document.getElementById('submitBtn').disabled = false;
         }
-    </script>
+    });
+
+    function renderResults(data) {
+        const s = data.summary;
+        document.getElementById('targetCityName').innerText = data.city;
+        document.getElementById('algoName').innerText = `最低能量 H: ${data.min_energy} | 耗時: ${data.execution_time_sec}s`;
+
+        // 填入頂部 4 個統計卡片
+        document.getElementById('statsCards').innerHTML = `
+            <div class="col-md-3">
+                <div class="p-3 bg-light rounded-3">
+                    <div class="text-muted small">總預估門票費用</div>
+                    <div class="fs-4 fw-bold text-success">$${s.total_cost} <span class="fs-6 text-muted">/ ${s.target_budget}元</span></div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="p-3 bg-light rounded-3">
+                    <div class="text-muted small">真實總行程時間</div>
+                    <div class="fs-4 fw-bold text-primary">${s.total_real_time_minutes} <span class="fs-6 text-muted">分鐘</span></div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="p-3 bg-light rounded-3">
+                    <div class="text-muted small">景點間車程距離</div>
+                    <div class="fs-4 fw-bold text-info">${s.total_travel_distance_km} <span class="fs-6 text-muted">km (${s.total_travel_time_minutes}分)</span></div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="p-3 bg-light rounded-3">
+                    <div class="text-muted small">平均貝氏加權評分</div>
+                    <div class="fs-4 fw-bold text-warning">★ ${(s.total_rating / data.itinerary.length).toFixed(2)}</div>
+                </div>
+            </div>
+        `;
+
+        // 填入景點路線細節
+        const itineraryList = document.getElementById('itineraryList');
+        itineraryList.innerHTML = '';
+
+        data.itinerary.forEach((item, index) => {
+            let cardHtml = `
+                <div class="card card-custom route-step-card p-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-primary me-2">時段 t=${item.step}</span>
+                            <span class="fw-bold fs-5">${item.spot_name}</span>
+                        </div>
+                        <div>
+                            <span class="badge bg-warning text-dark me-2">★ ${item.rating} 分</span>
+                            <span class="text-muted small">停留: <strong>${item.stay_minutes}</strong> 分鐘 | 費用: <strong>${item.cost}</strong> 元</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 如果有下一景點的交通距離資訊，顯示路程卡片
+            if (item.next_travel_dist_km !== undefined) {
+                cardHtml += `
+                    <div class="p-2 px-3 my-2 travel-info d-flex align-items-center">
+                        <span class="me-2">🚗</span>
+                        <span>往下一景點車程：<strong>${item.next_travel_dist_km} km</strong>（預估 driving 時間 <strong>${item.next_travel_time_min}</strong> 分鐘）</span>
+                    </div>
+                `;
+            }
+
+            itineraryList.innerHTML += cardHtml;
+        });
+
+        // 顯示結果區域
+        document.getElementById('resultContainer').classList.remove('d-none');
+    }
+</script>
 
 </body>
 </html>
