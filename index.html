@@ -1,9 +1,100 @@
-// 修改前可能是 http://127.0.0.1:5000/calculate 或其他網址
-// 請改為你的 Render 網址：
-fetch("https://my-math-app-n44r.onrender.com/calculate", {
-    method: "POST",
-    headers: {
-        "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ ... })
-})
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前後端測試 MVP</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f4f9;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 300px;
+        }
+        input {
+            width: 80%;
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+        button {
+            width: 88%;
+            padding: 10px;
+            font-size: 16px;
+            color: white;
+            background-color: #007bff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .result {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>數字計算機 (*10 + 2)</h2>
+        <input type="number" id="numInput" placeholder="請輸入數字">
+        <button onclick="calculate()">送出計算</button>
+        <div class="result" id="resultText">結果：--</div>
+    </div>
+
+    <script>
+        async function calculate() {
+            const inputVal = document.getElementById('numInput').value;
+            const resultText = document.getElementById('resultText');
+
+            if (inputVal === "") {
+                resultText.innerText = "請先輸入數字！";
+                return;
+            }
+
+            resultText.innerText = "計算中...";
+
+            try {
+                // 發送請求到 Render 後端 API
+                const response = await fetch("https://my-math-app-n44r.onrender.com/api/calculate", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ number: parseFloat(inputVal) })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultText.innerText = `結果：${data.result}`;
+                } else {
+                    resultText.innerText = `錯誤：${data.error || '無法完成計算'}`;
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                resultText.innerText = "連線失敗，請檢查 API！";
+            }
+        }
+    </script>
+
+</body>
+</html>
