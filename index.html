@@ -1,1 +1,9 @@
-前後端測試 MVP
+// 修改前可能是 http://127.0.0.1:5000/calculate 或其他網址
+// 請改為你的 Render 網址：
+fetch("https://my-math-app-n44r.onrender.com/calculate", {
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ ... })
+})
