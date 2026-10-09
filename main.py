@@ -10,8 +10,9 @@ import requests
 
 app = Flask(__name__)
 
-# 💡 允許你的 GitHub Pages 前端跨網域安全存取
-CORS(app, resources={r"/api/*": {"origins": "https://github.io"}})
+# 💡 將 origins 改為 "*"，徹底解除跨網域連線限制，確保 GitHub Pages 可以完全暢通連入
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+
 
 # =====================================================================
 # 1. API 金鑰配置 (優先從 Render 環境變數讀取，防呆保留原金鑰)
