@@ -12,11 +12,11 @@ app = Flask(__name__)
 CORS(app)
 
 # =====================================================================
-# 1. API 金鑰配置 (純 REST API 模式，不依賴 SDK)
+# 1. API 金鑰配置
 # =====================================================================
 GEMINI_API_KEY = os.getenv(
     "GEMINI_API_KEY",
-    "AQ.Ab8RN6JOGYx741NFx5dEs63n6goX85cXy4-iTQDYMIRHnugNfA",  # 最新 AQ. 開頭 Key
+    "AQ.Ab8RN6JOGYx741NFx5dEs63n6goX85cXy4-iTQDYMIRHnugNfA",  # 2026 AI Studio Auth Key
 ).strip()
 
 MAPS_API_KEY = os.getenv(
@@ -25,9 +25,10 @@ MAPS_API_KEY = os.getenv(
 
 
 # =====================================================================
-# 2. 完全跳過 SDK，使用 requests 直連 Gemini REST API
+# 2. 完全跳過 SDK，使用 x-goog-api-key 直連 REST API
 # =====================================================================
 def fetch_city_spots_from_gemini(city_name, spot_count=14):
+    # 採用標準 REST Endpoint，完全不用在 URL 加 ?key= 避免干擾
     url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
     prompt = (
@@ -45,31 +46,15 @@ def fetch_city_spots_from_gemini(city_name, spot_count=14):
         "generationConfig": {"response_mime_type": "application/json"},
     }
 
-    # 多重 Header 組合：解決 AQ. 格式在 REST API 下的驗證機制
-    headers_options = [
-        {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {GEMINI_API_KEY}",
-        },
-        {
-            "Content-Type": "application/json",
-            "x-goog-api-key": GEMINI_API_KEY,
-        },
-        {
-            "Content-Type": "application/json",
-        },
-    ]
+    # ⚠️ 關鍵：針對 AQ. 格式，必須「只使用」x-goog-api-key，嚴禁加上 Authorization: Bearer
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+    }
 
-    for h_idx, headers in enumerate(headers_options):
-        # 模式 3 將 Key 放在 URL 參數
-        request_url = (
-            f"{url}?key={GEMINI_API_KEY}" if h_idx == 2 else url
-        )
-
+    for attempt in range(1, 4):
         try:
-            res = requests.post(
-                request_url, headers=headers, json=payload, timeout=12
-            )
+            res = requests.post(url, headers=headers, json=payload, timeout=12)
             data = res.json()
 
             if res.status_code == 200:
@@ -85,12 +70,11 @@ def fetch_city_spots_from_gemini(city_name, spot_count=14):
                 return json.loads(clean_text.strip())
             else:
                 err_msg = data.get("error", {}).get("message", "Unknown Error")
-                print(
-                    f"⚠️ REST 驗證模式 {h_idx+1} 失敗 ({res.status_code}):"
-                    f" {err_msg}"
-                )
+                print(f"⚠️ REST 請求失敗 (HTTP {res.status_code}): {err_msg}")
+                time.sleep(2)
         except Exception as e:
-            print(f"⚠️ 請求發送異常: {e}")
+            print(f"⚠️ 請求發送異常 (嘗試 {attempt}/3): {e}")
+            time.sleep(2)
 
     return None
 
