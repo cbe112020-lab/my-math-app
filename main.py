@@ -21,7 +21,7 @@ MAPS_API_KEY = os.getenv("MAPS_API_KEY", "").strip()
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-client = genai.Client(api_key=GEMINI_API_KEY.strip())
+
 
 
 # =====================================================================
@@ -259,7 +259,7 @@ def plan_trip():
     total_stay_time = sum(
         Stay[i] * x[i, t] for i in range(N) for t in range(T_max)
     )
-    T_target_stay = target_time_limit - 80
+    T_target_stay = target_time_limit - 90
     H_time = (
         alpha_t * ((total_stay_time - T_target_stay) ** 2)
         + alpha_t2 * total_travel_time
