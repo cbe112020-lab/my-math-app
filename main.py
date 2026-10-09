@@ -31,10 +31,10 @@ MAPS_API_KEY = os.getenv(
 # 2. 直連 REST API (相容 2026 年最新 gemini-3.6-flash 與 AQ. 金鑰)
 # =====================================================================
 def fetch_city_spots_from_gemini(city_name, spot_count=14):
-    # 💡 使用最新的 3.6 flash 正式端點
+    # 💡 修正為 2026 年官方針對 Bearer 驗證最穩定的 v1 生產環境端點，並使用 2.5-flash
     url = "https://googleapis.com"
 
-    # 💡 嚴格移除所有 Markdown 符號，確保符合 3.6 結構化輸出規範，避免 JSON 模式衝突
+    # 💡 嚴格限制輸出，確保不會夾帶任何干擾解析的 Markdown 符號
     prompt = (
         f"請化身為『{city_name}』的在地旅遊專家。\n"
         f"請列出屬於『{city_name}』最著名的 {spot_count} 個旅遊景點、名勝古蹟或觀光景點。\n"
@@ -52,11 +52,12 @@ def fetch_city_spots_from_gemini(city_name, spot_count=14):
         }
     }
 
-    # 💡 帶上 AQ. 金鑰專用的 Bearer Header 驗證機制
+    # 帶上你的 AQ. 金鑰驗證
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {GEMINI_API_KEY}",
     }
+
 
     for attempt in range(1, 4):
         try:
