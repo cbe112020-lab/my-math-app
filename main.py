@@ -14,14 +14,12 @@ app = Flask(__name__)
 CORS(app)  # 允許 Cross-Origin 跨網域存取 (GitHub Pages / 前端呼叫必備)
 
 # =====================================================================
-# 1. API 金鑰與環境配置
+# 1. API 金鑰與環境配置 (改從環境變數讀取，不寫死在程式碼中)
 # =====================================================================
-GEMINI_API_KEY = os.getenv(
-    "GEMINI_API_KEY", "AQ.Ab8RN6IR8NystpiqI-haIqtYFC4ynnJCOewUR_eyw4rwMYS70g"
-)
-MAPS_API_KEY = os.getenv(
-    "MAPS_API_KEY", "AIzaSyDpQflWzh_2ylE2IxkPY5SSkq9ENzQ2L7I"
-)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+MAPS_API_KEY = os.getenv("MAPS_API_KEY", "").strip()
+
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 client = genai.Client(api_key=GEMINI_API_KEY.strip())
 
