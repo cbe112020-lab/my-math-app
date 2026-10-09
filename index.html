@@ -13,6 +13,7 @@
         .route-step-card { background-color: #ffffff; border-left: 5px solid #0d6efd; margin-bottom: 15px; transition: transform 0.2s; }
         .route-step-card:hover { transform: translateY(-2px); }
         .travel-info { background-color: #e9ecef; border-radius: 8px; font-size: 0.88rem; color: #495057; }
+        .accordion-button:not(.collapsed) { background-color: #e7f1ff; color: #0c63e4; }
     </style>
 </head>
 <body>
@@ -21,7 +22,7 @@
     <!-- 標題區 -->
     <div class="text-center mb-5">
         <h1 class="fw-bold text-dark">⚛️ 量子退火旅遊行程規劃系統</h1>
-        <p class="text-muted fs-6">Gemini AI 動態搜尋 + Google Maps 雙矩陣 + 6 式 QUBO 模擬退火優化</p>
+        <p class="text-muted fs-6">Gemini AI 動態搜尋 (20景點) + Google Maps 雙矩陣 + 可調式 QUBO 模擬退火優化</p>
     </div>
 
     <!-- 1. 輸入參數表單 -->
@@ -29,20 +30,74 @@
         <div class="col-md-9">
             <div class="card card-custom p-4 bg-white">
                 <form id="planForm">
+                    <!-- 基本旅遊設定 -->
                     <div class="row g-3">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label for="city" class="form-label fw-bold">欲規劃城市</label>
                             <input type="text" class="form-control" id="city" value="高雄" placeholder="例如：高雄、台北、京都" required>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
+                            <label for="num_spots" class="form-label fw-bold">欲景點數量 (3~8)</label>
+                            <input type="number" class="form-control" id="num_spots" min="3" max="8" value="5" required>
+                        </div>
+                        <div class="col-md-3">
                             <label for="budget" class="form-label fw-bold">目標預算 (元)</label>
                             <input type="number" class="form-control" id="budget" value="600" required>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label for="target_time" class="form-label fw-bold">目標總時間 (分鐘)</label>
                             <input type="number" class="form-control" id="target_time" value="600" required>
                         </div>
                     </div>
+
+                    <!-- 2. 進階 QUBO 權重與懲罰係數手風琴設定區 -->
+                    <div class="accordion mt-4" id="quboSettingsAccordion">
+                        <div class="accordion-item border-0 shadow-sm rounded-3 overflow-hidden">
+                            <h2 class="accordion-header" id="headingOne">
+                                <button class="accordion-button collapsed fw-bold text-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#collapseQUBO" aria-expanded="false" aria-controls="collapseQUBO">
+                                    ⚙️ 進階 QUBO 權重與懲罰係數調校面板
+                                </button>
+                            </h2>
+                            <div id="collapseQUBO" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#quboSettingsAccordion">
+                                <div class="accordion-body bg-light">
+                                    <div class="row g-3">
+                                        <div class="col-12"><h6 class="fw-bold text-primary mb-1">🎯 權重係數 (Weights)</h6></div>
+                                        <div class="col-md-4">
+                                            <label for="alpha_r" class="form-label small text-muted">景點評分權重 ($\alpha_r$)</label>
+                                            <input type="number" step="0.1" class="form-control form-control-sm" id="alpha_r" value="15.0">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="alpha_p" class="form-label small text-muted">預算約束權重 ($\alpha_p$)</label>
+                                            <input type="number" step="0.01" class="form-control form-control-sm" id="alpha_p" value="0.05">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="alpha_d" class="form-label small text-muted">車程距離權重 ($\alpha_d$)</label>
+                                            <input type="number" step="0.01" class="form-control form-control-sm" id="alpha_d" value="0.02">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="alpha_t" class="form-label small text-muted">停留時間控制權重 ($\alpha_t$)</label>
+                                            <input type="number" step="0.01" class="form-control form-control-sm" id="alpha_t" value="0.01">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="alpha_t2" class="form-label small text-muted">車程時間極小化權重 ($\alpha_{t2}$)</label>
+                                            <input type="number" step="0.01" class="form-control form-control-sm" id="alpha_t2" value="0.02">
+                                        </div>
+
+                                        <div class="col-12 border-top pt-2"><h6 class="fw-bold text-danger mb-1">⛔ 硬性限制懲罰係數 (Penalties)</h6></div>
+                                        <div class="col-md-6">
+                                            <label for="e_penalty" class="form-label small text-muted">時間點單一選取懲罰 ($E$)</label>
+                                            <input type="number" step="100" class="form-control form-control-sm" id="e_penalty" value="10000.0">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="lam_penalty" class="form-label small text-muted">景點不重複造訪懲罰 ($\lambda$)</label>
+                                            <input type="number" step="100" class="form-control form-control-sm" id="lam_penalty" value="10000.0">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mt-4 text-center">
                         <button type="submit" class="btn btn-primary btn-lg px-5 fw-bold shadow-sm" id="submitBtn">
                             🚀 開始量子退火優化求解
@@ -53,14 +108,14 @@
         </div>
     </div>
 
-    <!-- 2. Loading 載入等待動畫 -->
+    <!-- 3. Loading 載入等待動畫 -->
     <div id="loading" class="text-center d-none my-5">
         <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
-        <h5 class="fw-bold text-dark">Gemini 搜尋景點中 & 進行 6 式 QUBO 量子退火運算...</h5>
+        <h5 class="fw-bold text-dark">Gemini 搜尋 20 個景點中 & 進行可調式 QUBO 量子退火運算...</h5>
         <p class="text-muted small">這需要呼叫真實 Google Distance Matrix 矩陣，請耐心等待約 10~20 秒</p>
     </div>
 
-    <!-- 3. 運算結果展示區 -->
+    <!-- 4. 運算結果展示區 -->
     <div id="resultContainer" class="row justify-content-center d-none">
         <div class="col-md-9">
             <!-- 數據統計卡片區 -->
@@ -76,7 +131,7 @@
 
             <!-- 最佳行程路線圖列表 -->
             <div class="card card-custom p-4 bg-white">
-                <h5 class="fw-bold mb-3 border-bottom pb-2">🗓️ 【<span id="targetCityName"></span>】最佳退火推薦路線表</h5>
+                <h5 class="fw-bold mb-3 border-bottom pb-2">🗓️ 【<span id="targetCityName"></span>】最佳退火推薦路線表 (<span id="targetSpotsCount"></span>個景點)</h5>
                 <div id="itineraryList">
                     <!-- JavaScript 將動態填入路線內容 -->
                 </div>
@@ -84,6 +139,9 @@
         </div>
     </div>
 </div>
+
+<!-- 引入 Bootstrap 5 JS 模組（支援手風琴折疊選單） -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
     // ⚠️ 請確認你的 Render API 後端網址 (若前後端在同個 Render Web Service 則保留 '/api/plan_trip' 即可)
@@ -93,8 +151,23 @@
         e.preventDefault();
 
         const city = document.getElementById('city').value.trim();
+        const num_spots = parseInt(document.getElementById('num_spots').value);
         const budget = parseFloat(document.getElementById('budget').value);
         const target_time = parseFloat(document.getElementById('target_time').value);
+
+        // 打包權重與懲罰參數
+        const weights = {
+            alpha_r: parseFloat(document.getElementById('alpha_r').value),
+            alpha_p: parseFloat(document.getElementById('alpha_p').value),
+            alpha_d: parseFloat(document.getElementById('alpha_d').value),
+            alpha_t: parseFloat(document.getElementById('alpha_t').value),
+            alpha_t2: parseFloat(document.getElementById('alpha_t2').value)
+        };
+
+        const penalties = {
+            e_penalty: parseFloat(document.getElementById('e_penalty').value),
+            lam_penalty: parseFloat(document.getElementById('lam_penalty').value)
+        };
 
         // 控制 UI 狀態
         document.getElementById('loading').classList.remove('d-none');
@@ -105,7 +178,14 @@
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ city, budget, target_time })
+                body: JSON.stringify({
+                    city,
+                    num_spots,
+                    budget,
+                    target_time,
+                    weights,
+                    penalties
+                })
             });
 
             const data = await response.json();
@@ -127,6 +207,7 @@
     function renderResults(data) {
         const s = data.summary;
         document.getElementById('targetCityName').innerText = data.city;
+        document.getElementById('targetSpotsCount').innerText = data.target_spots;
         document.getElementById('algoName').innerText = `最低能量 H: ${data.min_energy} | 耗時: ${data.execution_time_sec}s`;
 
         // 填入頂部 4 個統計卡片
