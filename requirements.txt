@@ -1,4 +1,5 @@
 --only-binary=:all:
+google-genai>=2.21.0
 numpy>=1.24.0
 pyqubo>=1.4.0
 dwave-neal>=0.6.0

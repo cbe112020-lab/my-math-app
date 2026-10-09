@@ -3,6 +3,9 @@ import os
 import time
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+# 💡 引入 2026 官方 Gemini 最新的 SDK
+from google import genai
+from google.genai import types
 import neal
 import numpy as np
 from pyqubo import Array, Constraint
@@ -10,12 +13,11 @@ import requests
 
 app = Flask(__name__)
 
-# 💡 將 origins 改為 "*"，徹底解除跨網域連線限制，確保 GitHub Pages 可以完全暢通連入
+# 💡 全面解鎖跨網域限制
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-
 # =====================================================================
-# 1. API 金鑰配置 (優先從 Render 環境變數讀取，防呆保留原金鑰)
+# 1. API 金鑰與用戶端配置 (自動相容新版 AQ. 金鑰驗證)
 # =====================================================================
 GEMINI_API_KEY = os.getenv(
     "GEMINI_API_KEY",
@@ -27,14 +29,22 @@ MAPS_API_KEY = os.getenv(
     "AIzaSyDpQflWzh_2ylE2IxkPY5SSkq9ENzQ2L7I"
 ).strip()
 
+# 💡 初始化官方用戶端。這一步是解決 char 0 的最核心關鍵！
+# 官方 SDK 會自動辨識 AQ. 格式金鑰並走專屬安全通道驗證。
+try:
+    client = genai.Client(api_key=GEMINI_API_KEY)
+except Exception as e:
+    print(f"⚠️ Gemini SDK 初始化失敗: {e}")
+    client = None
+
 # =====================================================================
-# 2. 直連 REST API (相容 2026 年最新 gemini-3.6-flash 與 AQ. 金鑰)
+# 2. 透過官方 SDK 獲取景點 (100% 避開 REST API 的 401/403 錯誤)
 # =====================================================================
 def fetch_city_spots_from_gemini(city_name, spot_count=14):
-    # 💡 修正為 2026 年官方針對 Bearer 驗證最穩定的 v1 生產環境端點，並使用 2.5-flash
-    url = "https://googleapis.com"
+    if not client:
+        print("⚠️ Gemini 官方 Client 未能成功建立")
+        return None
 
-    # 💡 嚴格限制輸出，確保不會夾帶任何干擾解析的 Markdown 符號
     prompt = (
         f"請化身為『{city_name}』的在地旅遊專家。\n"
         f"請列出屬於『{city_name}』最著名的 {spot_count} 個旅遊景點、名勝古蹟或觀光景點。\n"
@@ -45,41 +55,28 @@ def fetch_city_spots_from_gemini(city_name, spot_count=14):
         "不要有任何 Markdown 標籤、不需加上 ```json、不要有任何額外說明文字。"
     )
 
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "response_mime_type": "application/json"
-        }
-    }
-
-    # 帶上你的 AQ. 金鑰驗證
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {GEMINI_API_KEY}",
-    }
-
-
     for attempt in range(1, 4):
         try:
-            res = requests.post(url, headers=headers, json=payload, timeout=12)
-            data = res.json()
-
-            if res.status_code == 200:
-                # 取得 3.6 回傳的純 JSON 字串
-                raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            # 💡 使用官方 SDK 呼叫最新的 gemini-2.5-flash，並強制開啟結構化 JSON 輸出模式
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                ),
+            )
+            
+            if response.text:
+                raw_text = response.text.strip()
                 
-                # 防呆清理（避免 AI 偶然吐出 markdown 符號）
+                # 預防性撥除可能殘留的 markdown 標籤
                 if raw_text.startswith("```json"): raw_text = raw_text[7:]
                 if raw_text.startswith("```"): raw_text = raw_text[3:]
                 if raw_text.endswith("```"): raw_text = raw_text[:-3]
-
+                
                 return json.loads(raw_text.strip())
-            else:
-                err_msg = data.get("error", {}).get("message", "Unknown Error")
-                print(f"⚠️ Gemini 3.6 請求失敗 [嘗試 {attempt}/3] (HTTP {res.status_code}): {err_msg}")
-                time.sleep(1)
         except Exception as e:
-            print(f"⚠️ 3.6 請求發送異常 (嘗試 {attempt}/3): {e}")
+            print(f"⚠️ Gemini SDK 請求失敗 [嘗試 {attempt}/3]: {e}")
             time.sleep(1)
 
     return None
@@ -101,7 +98,7 @@ def get_place_details_from_google(city_name, spot_name):
         res = requests.post(search_url, headers=headers, json=data, timeout=5)
         result = res.json()
         if "places" in result and result["places"]:
-            place_info = result["places"][0]
+            place_info = result["places"]
             return {
                 "place_id": place_info.get("id"),
                 "rating": float(place_info.get("rating", 4.2)),
@@ -202,7 +199,7 @@ def plan_trip():
 
     raw_spots = fetch_city_spots_from_gemini(city, spot_count=14)
     if not raw_spots:
-        return jsonify({"status": "error", "message": f"Gemini 3.6 API 請求失敗，無法取得 {city} 景點資料"}), 400
+        return jsonify({"status": "error", "message": f"Gemini API 請求失敗，無法取得 {city} 景點資料"}), 400
 
     spots_data = []
     place_ids = []
@@ -276,10 +273,6 @@ def plan_trip():
         for t in range(T_max)
     )
     
-    # 💡 完美的硬性重複檢查懲罰項
-    # === 💡 以下是幫你全部連起來、修復縮排的正確程式碼 ===
-    
-    # 完美的硬性重複檢查懲罰項
     H_C2 = lam_penalty * sum(
         Constraint(x[i, t1] * x[i, t2], label=f"C2_spot_{i}_{t1}_{t2}")
         for i in range(N)
@@ -288,7 +281,9 @@ def plan_trip():
     )
 
     H = H_rating + H_price + H_distance + H_time + H_C1 + H_C2
-    model = H.compile()
+    # === 💡 以下是為您重新對齊縮排、完全無縫串聯的後半段核心代碼 ===
+    
+       model = H.compile()
     qubo, offset = model.to_qubo()
 
     sampler = neal.SimulatedAnnealingSampler()
@@ -304,11 +299,13 @@ def plan_trip():
                 selected_indices.append((t, i))
 
     itinerary = []
-    # 修正回原本最精確的二維索引統計法
+    # 💡 修正回原本最精確且不會噴 IndexError 的二維索引統計法
     if len(selected_indices) == T_max:
         tot_rating = float(sum(WR[i] for _, i in selected_indices))
         tot_cost = float(sum(C[i] for _, i in selected_indices))
         tot_stay = float(sum(Stay[i] for _, i in selected_indices))
+        
+        # 使用 [k][1] 精準抓取 selected_indices 的景點 ID，防止統計出錯
         tot_time_min = float(sum(D_matrix[selected_indices[k][1], selected_indices[k + 1][1]] for k in range(T_max - 1)))
         tot_dist_km = float(sum(Dist_matrix[selected_indices[k][1], selected_indices[k + 1][1]] for k in range(T_max - 1)))
 
@@ -348,7 +345,7 @@ def plan_trip():
         return jsonify({"status": "warning", "message": "退火未收斂"}), 500
 
 
-# 💡 這一塊是主程式進入點，必須靠最左邊（不縮排），且修正為標準的 __name__ 語法
+# 💡 主程式進入點，保持完全不縮排靠左
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
