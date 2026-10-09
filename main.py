@@ -11,20 +11,27 @@ from pyqubo import Array, Constraint
 import requests
 
 app = Flask(__name__)
-CORS(app)  # 允許跨網域存取 (GitHub Pages 必備)
+CORS(app)
 
 # =====================================================================
-# 1. API 金鑰配置 (直接鎖定你的實測有效 KEY)
+# 1. API 金鑰配置 (優先讀取環境變數，備用填寫預設 Key)
 # =====================================================================
-GEMINI_API_KEY = "AQ.Ab8RN6KBY3F8dMJ90apQutIx0266MHzbnKjFovyY04_buHOzGA"
-MAPS_API_KEY = "AIzaSyDpQflWzh_2ylE2IxkPY5SSkq9ENzQ2L7I"
+GEMINI_API_KEY = os.getenv(
+    "GEMINI_API_KEY",
+    "AQ.Ab8RN6JOGYx741NFx5dEs63n6goX85cXy4-iTQDYMIRHnugNfA",  # 2026 Google AI Studio Key
+).strip()
 
-# 初始化 Gemini Client
-client = genai.Client(api_key=GEMINI_API_KEY.strip())
+MAPS_API_KEY = os.getenv(
+    "MAPS_API_KEY", "AIzaSyDpQflWzh_2ylE2IxkPY5SSkq9ENzQ2L7I"
+).strip()
+
+# 初始化 SDK Client (明確將 API Key 設定至環境變數並帶入 Client)
+os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # =====================================================================
-# 2. 工具模組 (與 Colab 完全一致)
+# 2. 景點爬取模組 (適配最新 google-genai SDK 規範)
 # =====================================================================
 def fetch_city_spots_from_gemini(city_name, spot_count=14):
     prompt = (
@@ -37,25 +44,40 @@ def fetch_city_spots_from_gemini(city_name, spot_count=14):
         "不要有任何 Markdown 標籤或額外說明文字。\n"
     )
 
-    target_model = "models/gemini-2.5-flash"
-    for attempt in range(3):
-        try:
-            response = client.models.generate_content(
-                model=target_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                ),
-            )
-            return json.loads(response.text.strip())
-        except Exception as e:
-            print(f"⚠️ Gemini 連線問題 ({e})，2 秒後重試...")
-            time.sleep(2)
+    # 嘗試 1.5-flash 與 2.5-flash 相容模型
+    model_candidates = ["gemini-1.5-flash", "gemini-2.5-flash"]
+
+    for model_name in model_candidates:
+        for attempt in range(1, 3):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    ),
+                )
+                clean_text = response.text.strip()
+                if clean_text.startswith("```json"):
+                    clean_text = clean_text[7:]
+                if clean_text.startswith("```"):
+                    clean_text = clean_text[3:]
+                if clean_text.endswith("```"):
+                    clean_text = clean_text[:-3]
+
+                return json.loads(clean_text.strip())
+            except Exception as e:
+                print(
+                    f"⚠️ Gemini API [{model_name}] 第 {attempt} 次呼叫失敗:"
+                    f" {e}"
+                )
+                time.sleep(1)
+
     return None
 
 
 def get_place_details_from_google(city_name, spot_name):
-    search_url = "https://places.googleapis.com/v1/places:searchText"
+    search_url = "[https://places.googleapis.com/v1/places:searchText](https://places.googleapis.com/v1/places:searchText)"
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": MAPS_API_KEY,
@@ -69,7 +91,7 @@ def get_place_details_from_google(city_name, spot_name):
     data = {"textQuery": query}
 
     try:
-        res = requests.post(search_url, headers=headers, json=data)
+        res = requests.post(search_url, headers=headers, json=data, timeout=5)
         result = res.json()
         if "places" in result and result["places"]:
             place_info = result["places"][0]
@@ -81,14 +103,20 @@ def get_place_details_from_google(city_name, spot_name):
                 ),
             }
     except Exception as e:
-        print(f"  ⚠️ Places API 查詢失敗 [{spot_name}]: {e}")
+        print(f"Places API 錯誤 [{spot_name}]: {e}")
     return None
 
 
 def get_distance_and_time_matrices(place_ids):
-    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
-    origins_destinations = "|".join([f"place_id:{pid}" for pid in place_ids])
+    n = len(place_ids)
+    time_matrix = np.zeros((n, n), dtype=float)
+    dist_matrix = np.zeros((n, n), dtype=float)
 
+    valid_place_ids = [
+        f"place_id:{pid}" if pid else "高雄火車站" for pid in place_ids
+    ]
+    url = "[https://maps.googleapis.com/maps/api/distancematrix/json](https://maps.googleapis.com/maps/api/distancematrix/json)"
+    origins_destinations = "|".join(valid_place_ids)
     params = {
         "origins": origins_destinations,
         "destinations": origins_destinations,
@@ -97,14 +125,9 @@ def get_distance_and_time_matrices(place_ids):
         "key": MAPS_API_KEY,
     }
 
-    n = len(place_ids)
-    time_matrix = np.zeros((n, n), dtype=float)
-    dist_matrix = np.zeros((n, n), dtype=float)
-
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=8)
         data = response.json()
-
         if data.get("status") == "OK":
             rows = data.get("rows", [])
             for i in range(n):
@@ -135,7 +158,6 @@ def get_distance_and_time_matrices(place_ids):
             dist_matrix = np.random.uniform(3.0, 20.0, size=(n, n)).round(2)
             np.fill_diagonal(time_matrix, 0)
             np.fill_diagonal(dist_matrix, 0)
-
     except Exception as e:
         time_matrix = np.random.randint(10, 35, size=(n, n)).astype(float)
         dist_matrix = np.random.uniform(3.0, 20.0, size=(n, n)).round(2)
@@ -158,7 +180,6 @@ def plan_trip():
     start_time = time.time()
     req_data = request.get_json() or {}
 
-    # UI 傳入參數解析
     city = req_data.get("city", "高雄").strip()
     target_budget = float(req_data.get("budget", 600.0))
     target_time_limit = float(req_data.get("target_time", 600.0))
@@ -179,11 +200,10 @@ def plan_trip():
     TARGET_N = 10
     MIN_RATING = 3.0
 
-    # 1. 抓取景點
     raw_spots = fetch_city_spots_from_gemini(city, spot_count=14)
     if not raw_spots:
         return (
-            jsonify({"status": "error", "message": f"無法取得 {city} 景點"}),
+            jsonify({"status": "error", "message": f"無法取得 {city} 景點資料"}),
             400,
         )
 
@@ -230,16 +250,8 @@ def plan_trip():
             400,
         )
 
-    # 2. 建立雙矩陣
-    if all(place_ids):
-        D_matrix, Dist_matrix = get_distance_and_time_matrices(place_ids)
-    else:
-        D_matrix = np.random.randint(10, 35, size=(N, N)).astype(float)
-        Dist_matrix = np.random.uniform(3.0, 18.0, size=(N, N)).round(2)
-        np.fill_diagonal(D_matrix, 0)
-        np.fill_diagonal(Dist_matrix, 0)
+    D_matrix, Dist_matrix = get_distance_and_time_matrices(place_ids)
 
-    # 3. QUBO 運算
     spot_names = [d["name"] for d in spots_data]
     R = np.array([d["R"] for d in spots_data], dtype=float)
     v = np.array([d["v"] for d in spots_data], dtype=float)
