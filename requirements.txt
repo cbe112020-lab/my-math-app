@@ -1,8 +1,8 @@
+google-generativeai
 Flask
 flask-cors
-gunicorn
-requests
-numpy
 pyqubo
 dwave-neal
-google-genai
+numpy
+requests
+gunicorn

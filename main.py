@@ -3,16 +3,14 @@ import os
 import time
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from google import genai
-from google.genai import types
+import google.generativeai as genai  # 使用標準穩定版套件
 import neal
 import numpy as np
 from pyqubo import Array, Constraint
 import requests
 
 app = Flask(__name__)
-CORS(app)  # 允許跨網域存取
-
+CORS(app)
 # =====================================================================
 # 1. API 金鑰測試配置 (直接填入你的 Key 進行測試)
 # =====================================================================
@@ -41,16 +39,16 @@ def fetch_city_spots_from_gemini(city_name, spot_count=10):
         "不要有任何 Markdown 標籤或額外說明文字。\n"
     )
 
+    # 重試 3 次機制
     for attempt in range(1, 4):
         try:
-            response = client.models.generate_content(
-                model="gemini-3.6-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                ),
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            response = model.generate_content(
+                prompt,
+                generation_config={"response_mime_type": "application/json"},
             )
             clean_text = response.text.strip()
+
             if clean_text.startswith("```json"):
                 clean_text = clean_text[7:]
             if clean_text.startswith("```"):
