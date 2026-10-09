@@ -19,9 +19,8 @@ CORS(app)  # 允許 Cross-Origin 跨網域存取 (GitHub Pages / 前端呼叫必
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 MAPS_API_KEY = os.getenv("MAPS_API_KEY", "").strip()
 
+# 初始化 Gemini Client
 client = genai.Client(api_key=GEMINI_API_KEY)
-
-
 
 
 # =====================================================================
@@ -37,27 +36,38 @@ def fetch_city_spots_from_gemini(city_name, spot_count=20):
         "3. `estimated_cost`: 門票預估消費 (整數新台幣，免費填 0)\n"
         "不要有任何 Markdown 標籤或額外說明文字。\n"
     )
-    try:
-        response = client.models.generate_content(
-            model="models/gemini-3.6-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            ),
-        )
-        clean_text = response.text.strip()
-        if clean_text.startswith("```json"):
-            clean_text = clean_text[7:]
-        if clean_text.endswith("```"):
-            clean_text = clean_text[:-3]
-        return json.loads(clean_text.strip())
-    except Exception as e:
-        print(f"Gemini API 錯誤: {e}")
-        return None
+
+    # 重試 3 次機制，避開暫時性的 503 流量高峰
+    for attempt in range(1, 4):
+        try:
+            response = client.models.generate_content(
+                model="gemini-3.6-flash",  # API 官方標準穩定版名稱
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                ),
+            )
+            clean_text = response.text.strip()
+            if clean_text.startswith("```json"):
+                clean_text = clean_text[7:]
+            if clean_text.startswith("```"):
+                clean_text = clean_text[3:]
+            if clean_text.endswith("```"):
+                clean_text = clean_text[:-3]
+
+            return json.loads(clean_text.strip())
+
+        except Exception as e:
+            print(f"⚠️ Gemini API 第 {attempt} 次呼叫失敗: {e}")
+            if attempt < 3:
+                time.sleep(2)  # 等待 2 秒重試
+            else:
+                print("❌ Gemini API 嘗試多次後依然失敗。")
+                return None
 
 
 def get_place_details_from_google(city_name, spot_name):
-    search_url = "https://places.googleapis.com/v1/places:searchText"
+    search_url = "[https://places.googleapis.com/v1/places:searchText](https://places.googleapis.com/v1/places:searchText)"
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": MAPS_API_KEY,
@@ -78,7 +88,9 @@ def get_place_details_from_google(city_name, spot_name):
             return {
                 "place_id": place_info.get("id"),
                 "rating": float(place_info.get("rating", 4.2)),
-                "user_ratings_total": int(place_info.get("userRatingCount", 2000)),
+                "user_ratings_total": int(
+                    place_info.get("userRatingCount", 2000)
+                ),
             }
     except Exception as e:
         print(f"Places API 錯誤 [{spot_name}]: {e}")
@@ -94,7 +106,7 @@ def get_distance_and_time_matrices(place_ids):
     valid_place_ids = [
         f"place_id:{pid}" if pid else "高雄火車站" for pid in place_ids
     ]
-    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+    url = "[https://maps.googleapis.com/maps/api/distancematrix/json](https://maps.googleapis.com/maps/api/distancematrix/json)"
     origins_destinations = "|".join(valid_place_ids)
     params = {
         "origins": origins_destinations,
@@ -118,11 +130,15 @@ def get_distance_and_time_matrices(place_ids):
                     else:
                         if j < len(elements) and elements[j].get("status") == "OK":
                             duration_sec = (
-                                elements[j].get("duration", {}).get("value", 1200)
+                                elements[j]
+                                .get("duration", {})
+                                .get("value", 1200)
                             )
                             time_matrix[i, j] = round(duration_sec / 60.0, 1)
                             distance_m = (
-                                elements[j].get("distance", {}).get("value", 10000)
+                                elements[j]
+                                .get("distance", {})
+                                .get("value", 10000)
                             )
                             dist_matrix[i, j] = round(distance_m / 1000.0, 2)
                         else:
@@ -152,11 +168,11 @@ def plan_trip():
     target_budget = float(req_data.get("budget", 600.0))
     target_time_limit = float(req_data.get("target_time", 600.0))
 
-    # 【變更 2】自由輸入想要去幾個景點 (限制在 3 到 8 個之間)
+    # 自由輸入想要去幾個景點 (限制在 3 到 8 個之間)
     raw_num_spots = req_data.get("num_spots", req_data.get("target_spots", 5))
     T_max = max(3, min(8, int(raw_num_spots)))
 
-    # 【變更 3】解析使用者傳入的權重與懲罰係數 (若未提供則帶入預設值)
+    # 解析使用者傳入的權重與懲罰係數 (若未提供則帶入預設值)
     weights = req_data.get("weights", {})
     penalties = req_data.get("penalties", {})
 
@@ -169,14 +185,17 @@ def plan_trip():
     e_penalty = float(penalties.get("e_penalty", 10000.0))
     lam_penalty = float(penalties.get("lam_penalty", 10000.0))
 
-    # 【變更 1】改為抓 20 個景點
+    # 固定抓取 20 個景點
     TARGET_N = 20
     MIN_RATING = 3.0
 
     # 1. 抓取 20 個景點
     raw_spots = fetch_city_spots_from_gemini(city, spot_count=TARGET_N)
     if not raw_spots:
-        return jsonify({"status": "error", "message": f"無法取得 {city} 的景點資料"}), 400
+        return (
+            jsonify({"status": "error", "message": f"無法取得 {city} 的景點資料"}),
+            400,
+        )
 
     spots_data = []
     place_ids = []
@@ -216,7 +235,10 @@ def plan_trip():
         return (
             jsonify({
                 "status": "error",
-                "message": f"合格景點數不足 ({N} 個)，少於要求的景點數 ({T_max} 個)，無法執行 QUBO。",
+                "message": (
+                    f"合格景點數不足 ({N} 個)，少於要求的景點數 ({T_max} 個)，無法執行"
+                    " QUBO。"
+                ),
             }),
             400,
         )
@@ -372,7 +394,8 @@ def plan_trip():
             jsonify({
                 "status": "warning",
                 "message": (
-                    f"退火未完美收斂（未選滿 {T_max} 個景點），建議嘗試重新呼叫 API 或調整懲罰係數。"
+                    f"退火未完美收斂（未選滿 {T_max}"
+                    " 個景點），建議嘗試重新呼叫 API 或調整懲罰係數。"
                 ),
             }),
             500,
