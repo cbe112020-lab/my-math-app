@@ -39,7 +39,7 @@ def fetch_city_spots_from_gemini(city_name, spot_count=20):
     )
     try:
         response = client.models.generate_content(
-            model="models/gemini-1.5-flash",
+            model="models/gemini-3.8-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json"
