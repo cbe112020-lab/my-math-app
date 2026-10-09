@@ -17,13 +17,13 @@ CORS(app)  # 允許跨網域存取
 # 1. API 金鑰測試配置 (直接填入你的 Key 進行測試)
 # =====================================================================
 # ⚠️ 請在此處填入你的真實 API Key
-GEMINI_API_KEY = "AQ.Ab8RN6KLGY4L7IMd0eX_OW7xqHK8ROwFbTH3A8olaCuoF6GdbQ"
-MAPS_API_KEY = "AIzaSyDpQflWzh_2ylE2IxkPY5SSkq9ENzQ2L7I"
+AGEMINI_API_KEY = "AQ.Ab8RN6KLGY4L7IMd0eX_OW7xqHK8ROwFbTH3A8olaCuoF6GdbQ"
+AMAPS_API_KEY = "AIzaSyDpQflWzh_2ylE2IxkPY5SSkq9ENzQ2L7I"
 
-# 如果環境變數有值，則優先讀取環境變數，否則使用上面寫死的 Key
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", GEMINI_API_KEY).strip()
-MAPS_API_KEY = os.getenv("MAPS_API_KEY", MAPS_API_KEY).strip()
+GEMINI_API_KEY = AGEMINI_API_KEY.strip() or os.getenv("GEMINI_API_KEY", "").strip()
+MAPS_API_KEY = AMAPS_API_KEY.strip() or os.getenv("MAPS_API_KEY", "").strip()
 
+# 初始化 Gemini Client
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 
