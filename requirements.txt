@@ -1,4 +1,4 @@
-google-genai
+google-genai>=2.21.0
 Flask
 flask-cors
 pyqubo
