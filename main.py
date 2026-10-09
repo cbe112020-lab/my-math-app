@@ -16,7 +16,7 @@ CORS(app)
 # =====================================================================
 GEMINI_API_KEY = os.getenv(
     "GEMINI_API_KEY",
-    "AQ.Ab8RN6JOGYx741NFx5dEs63n6goX85cXy4-iTQDYMIRHnugNfA",  # 2026 AI Studio Auth Key
+    "AQ.Ab8RN6JOGYx741NFx5dEs63n6goX85cXy4-iTQDYMIRHnugNfA",  # 2026 AQ. 格式金鑰
 ).strip()
 
 MAPS_API_KEY = os.getenv(
@@ -25,12 +25,10 @@ MAPS_API_KEY = os.getenv(
 
 
 # =====================================================================
-# 2. 完全跳過 SDK，使用 x-goog-api-key 直連 REST API
+# 2. 直連 REST API (純 Bearer Header 模式，無備援機制)
 # =====================================================================
 def fetch_city_spots_from_gemini(city_name, spot_count=14):
-    # ⚠️ 關鍵修復：針對 AQ. 格式 Auth Key，必須使用 gemini-2.5-flash 或 gemini-3.6-flash
-    # 使用 1.5-flash 會引發 Google API 後端的 401 ACCESS_TOKEN_TYPE_UNSUPPORTED bug
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
     prompt = (
         f"請化身為『{city_name}』的在地旅遊專家。\n"
@@ -49,20 +47,12 @@ def fetch_city_spots_from_gemini(city_name, spot_count=14):
 
     headers = {
         "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY,
+        "Authorization": f"Bearer {GEMINI_API_KEY}",
     }
 
-    # 備援模型列表
-    models_to_try = [
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
-    ]
-
-    for req_url in models_to_try:
+    for attempt in range(1, 4):
         try:
-            res = requests.post(
-                req_url, headers=headers, json=payload, timeout=12
-            )
+            res = requests.post(url, headers=headers, json=payload, timeout=12)
             data = res.json()
 
             if res.status_code == 200:
@@ -79,12 +69,15 @@ def fetch_city_spots_from_gemini(city_name, spot_count=14):
             else:
                 err_msg = data.get("error", {}).get("message", "Unknown Error")
                 print(
-                    f"⚠️ REST 請求失敗 [{req_url.split('/')[-1]}] (HTTP"
+                    f"⚠️ Gemini REST 請求失敗 [嘗試 {attempt}/3] (HTTP"
                     f" {res.status_code}): {err_msg}"
                 )
+                time.sleep(1)
         except Exception as e:
-            print(f"⚠️ 請求發送異常: {e}")
+            print(f"⚠️ 請求發送異常 (嘗試 {attempt}/3): {e}")
+            time.sleep(1)
 
+    # 移除備援資料，API 失敗時直接傳回 None
     return None
 
 
@@ -180,7 +173,7 @@ def get_distance_and_time_matrices(place_ids):
 
 
 # =====================================================================
-# 3. Web API 路由 (對接前端 UI)
+# 3. Web API 路由
 # =====================================================================
 @app.route("/", methods=["GET"])
 def health_check():
@@ -215,7 +208,7 @@ def plan_trip():
     raw_spots = fetch_city_spots_from_gemini(city, spot_count=14)
     if not raw_spots:
         return (
-            jsonify({"status": "error", "message": f"無法取得 {city} 景點資料"}),
+            jsonify({"status": "error", "message": f"Gemini API 驗證或請求失敗，無法取得 {city} 景點資料"}),
             400,
         )
 
