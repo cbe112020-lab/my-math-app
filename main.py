@@ -11,15 +11,19 @@ from pyqubo import Array, Constraint
 import requests
 
 app = Flask(__name__)
-CORS(app)  # 允許 Cross-Origin 跨網域存取 (GitHub Pages / 前端呼叫必備)
+CORS(app)  # 允許跨網域存取
 
 # =====================================================================
-# 1. API 金鑰與環境配置
+# 1. API 金鑰測試配置 (直接填入你的 Key 進行測試)
 # =====================================================================
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-MAPS_API_KEY = os.getenv("MAPS_API_KEY", "").strip()
+# ⚠️ 請在此處填入你的真實 API Key
+GEMINI_API_KEY = "AQ.Ab8RN6KLGY4L7IMd0eX_OW7xqHK8ROwFbTH3A8olaCuoF6GdbQ"
+MAPS_API_KEY = "AIzaSyDpQflWzh_2ylE2IxkPY5SSkq9ENzQ2L7I"
 
-# 初始化 Gemini Client
+# 如果環境變數有值，則優先讀取環境變數，否則使用上面寫死的 Key
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", GEMINI_API_KEY).strip()
+MAPS_API_KEY = os.getenv("MAPS_API_KEY", MAPS_API_KEY).strip()
+
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 
@@ -37,11 +41,10 @@ def fetch_city_spots_from_gemini(city_name, spot_count=10):
         "不要有任何 Markdown 標籤或額外說明文字。\n"
     )
 
-    # 重試 3 次機制，避開暫時性的 503 流量高峰
     for attempt in range(1, 4):
         try:
             response = client.models.generate_content(
-                model="gemini-3.6-flash",  # 使用官方標準穩定版模型 ID
+                model="gemini-3.6-flash",
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json"
@@ -60,7 +63,7 @@ def fetch_city_spots_from_gemini(city_name, spot_count=10):
         except Exception as e:
             print(f"⚠️ Gemini API 第 {attempt} 次呼叫失敗: {e}")
             if attempt < 3:
-                time.sleep(2)  # 等待 2 秒重試
+                time.sleep(2)
             else:
                 print("❌ Gemini API 嘗試多次後依然失敗。")
                 return None
@@ -156,8 +159,13 @@ def get_distance_and_time_matrices(place_ids):
 
 
 # =====================================================================
-# 3. API 路由：/api/plan_trip
+# 3. 健康檢查與主 API 路由
 # =====================================================================
+@app.route("/", methods=["GET"])
+def health_check():
+    return jsonify({"status": "healthy", "message": "QUBO Travel API is running!"})
+
+
 @app.route("/api/plan_trip", methods=["POST"])
 def plan_trip():
     start_time = time.time()
@@ -167,11 +175,9 @@ def plan_trip():
     target_budget = float(req_data.get("budget", 600.0))
     target_time_limit = float(req_data.get("target_time", 600.0))
 
-    # 自由選擇欲前往景點數 (限制在 3 到 8 個之間)
     raw_num_spots = req_data.get("num_spots", req_data.get("target_spots", 5))
     T_max = max(3, min(8, int(raw_num_spots)))
 
-    # 解析權重與懲罰係數
     weights = req_data.get("weights", {})
     penalties = req_data.get("penalties", {})
 
@@ -184,15 +190,13 @@ def plan_trip():
     e_penalty = float(penalties.get("e_penalty", 10000.0))
     lam_penalty = float(penalties.get("lam_penalty", 10000.0))
 
-    # 【改為抓取 10 個景點】
     TARGET_N = 10
     MIN_RATING = 3.0
 
-    # 1. 抓取 10 個景點
     raw_spots = fetch_city_spots_from_gemini(city, spot_count=TARGET_N)
     if not raw_spots:
         return (
-            jsonify({"status": "error", "message": f"無法取得 {city} 的景點資料"}),
+            jsonify({"status": "error", "message": f"無法取得 {city} 的景點資料，請檢查 GEMINI_API_KEY 是否有效"}),
             400,
         )
 
@@ -220,7 +224,7 @@ def plan_trip():
             continue
 
         spots_data.append({
-            "id": len(spots_data),  # 確保 ID 永遠連續 (0, 1, 2...)
+            "id": len(spots_data),
             "name": spot_name,
             "R": rating,
             "v": v_count,
@@ -234,17 +238,13 @@ def plan_trip():
         return (
             jsonify({
                 "status": "error",
-                "message": (
-                    f"合格景點數不足 ({N} 個)，少於要求的景點數 ({T_max} 個)，無法執行 QUBO。"
-                ),
+                "message": f"合格景點數不足 ({N} 個)，少於要求的景點數 ({T_max} 個)。",
             }),
             400,
         )
 
-    # 2. 爬取或建立車程矩陣
     D_matrix, Dist_matrix = get_distance_and_time_matrices(place_ids)
 
-    # 3. 建立 6 式 QUBO 模型
     spot_names = [d["name"] for d in spots_data]
     R = np.array([d["R"] for d in spots_data], dtype=float)
     v = np.array([d["v"] for d in spots_data], dtype=float)
@@ -253,20 +253,16 @@ def plan_trip():
 
     m = 3000.0
     mean_rating = np.mean(R)
-    WR = (v / (v + m)) * R + (m / (v + m)) * mean_rating  # 貝氏加權評分
+    WR = (v / (v + m)) * R + (m / (v + m)) * mean_rating
 
     x = Array.create("x", shape=(N, T_max), vartype="BINARY")
 
-    # 式 1: 景點評分項
     H_rating = -alpha_r * sum(
         WR[i] * x[i, t] for i in range(N) for t in range(T_max)
     )
-
-    # 式 2: 價格預算項
     total_cost = sum(C[i] * x[i, t] for i in range(N) for t in range(T_max))
     H_price = alpha_p * ((total_cost - target_budget) ** 2)
 
-    # 式 3: 車程極小化項
     total_travel_time = sum(
         D_matrix[i, j] * x[i, t] * x[j, t + 1]
         for i in range(N)
@@ -275,7 +271,6 @@ def plan_trip():
     )
     H_distance = alpha_d * total_travel_time
 
-    # 式 4: 時間控制項
     total_stay_time = sum(
         Stay[i] * x[i, t] for i in range(N) for t in range(T_max)
     )
@@ -285,15 +280,12 @@ def plan_trip():
         + alpha_t2 * total_travel_time
     )
 
-    # 限制式 5: 每個時間點恰選一個景點
     H_C1 = e_penalty * sum(
         Constraint(
             ((sum(x[i, t] for i in range(N)) - 1) ** 2), label=f"C1_time_{t}"
         )
         for t in range(T_max)
     )
-
-    # 限制式 6: 景點不重複造訪
     H_C2 = lam_penalty * sum(
         Constraint(x[i, t1] * x[i, t2], label=f"C2_spot_{i}_{t1}_{t2}")
         for i in range(N)
@@ -305,7 +297,6 @@ def plan_trip():
     model = H.compile()
     qubo, offset = model.to_qubo()
 
-    # 4. Neal 模擬退火求解
     sampler = neal.SimulatedAnnealingSampler()
     response = sampler.sample_qubo(qubo, num_reads=1000)
 
@@ -318,7 +309,6 @@ def plan_trip():
             if best_sample.get(f"x[{i}][{t}]") == 1:
                 selected_indices.append((t, i))
 
-    # 5. 格式化 JSON 結果
     itinerary = []
     if len(selected_indices) == T_max:
         tot_rating = float(sum(WR[i] for _, i in selected_indices))
@@ -372,7 +362,6 @@ def plan_trip():
                 "total_travel_distance_km": round(tot_dist_km, 2),
                 "total_real_time_minutes": int(tot_stay + tot_time_min),
             },
-            # 供前端表格與熱力圖渲染真實 10 個景點資料
             "all_spots": spots_data,
             "matrices": {
                 "time_matrix": D_matrix.tolist(),
@@ -397,15 +386,12 @@ def plan_trip():
         return (
             jsonify({
                 "status": "warning",
-                "message": (
-                    f"退火未完美收斂（未選滿 {T_max} 個景點），建議嘗試重新呼叫 API 或調整懲罰係數。"
-                ),
+                "message": f"退火未完美收斂（未選滿 {T_max} 個景點），建議嘗試重新呼叫 API 或調整懲罰係數。",
             }),
             500,
         )
 
 
-# Render / 部署入口點
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
