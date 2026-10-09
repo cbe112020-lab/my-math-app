@@ -14,7 +14,7 @@ app = Flask(__name__)
 CORS(app)  # 允許 Cross-Origin 跨網域存取 (GitHub Pages / 前端呼叫必備)
 
 # =====================================================================
-# 1. API 金鑰與環境配置 (改從環境變數讀取，不寫死在程式碼中)
+# 1. API 金鑰與環境配置
 # =====================================================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 MAPS_API_KEY = os.getenv("MAPS_API_KEY", "").strip()
@@ -26,7 +26,7 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # =====================================================================
 # 2. API 爬取與工具模組
 # =====================================================================
-def fetch_city_spots_from_gemini(city_name, spot_count=20):
+def fetch_city_spots_from_gemini(city_name, spot_count=10):
     prompt = (
         f"請化身為『{city_name}』的在地旅遊專家。\n"
         f"請列出屬於『{city_name}』最著名的 {spot_count} 個旅遊景點、名勝古蹟或觀光景點。\n"
@@ -41,7 +41,7 @@ def fetch_city_spots_from_gemini(city_name, spot_count=20):
     for attempt in range(1, 4):
         try:
             response = client.models.generate_content(
-                model="gemini-3.6-flash",  # API 官方標準穩定版名稱
+                model="gemini-3.6-flash",  # 使用官方標準穩定版模型 ID
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json"
@@ -102,7 +102,6 @@ def get_distance_and_time_matrices(place_ids):
     time_matrix = np.zeros((n, n), dtype=float)
     dist_matrix = np.zeros((n, n), dtype=float)
 
-    # 預防 Place ID 有 None 值的狀況
     valid_place_ids = [
         f"place_id:{pid}" if pid else "高雄火車站" for pid in place_ids
     ]
@@ -168,11 +167,11 @@ def plan_trip():
     target_budget = float(req_data.get("budget", 600.0))
     target_time_limit = float(req_data.get("target_time", 600.0))
 
-    # 自由輸入想要去幾個景點 (限制在 3 到 8 個之間)
+    # 自由選擇欲前往景點數 (限制在 3 到 8 個之間)
     raw_num_spots = req_data.get("num_spots", req_data.get("target_spots", 5))
     T_max = max(3, min(8, int(raw_num_spots)))
 
-    # 解析使用者傳入的權重與懲罰係數 (若未提供則帶入預設值)
+    # 解析權重與懲罰係數
     weights = req_data.get("weights", {})
     penalties = req_data.get("penalties", {})
 
@@ -185,11 +184,11 @@ def plan_trip():
     e_penalty = float(penalties.get("e_penalty", 10000.0))
     lam_penalty = float(penalties.get("lam_penalty", 10000.0))
 
-    # 固定抓取 20 個景點
-    TARGET_N = 20
+    # 【改為抓取 10 個景點】
+    TARGET_N = 10
     MIN_RATING = 3.0
 
-    # 1. 抓取 20 個景點
+    # 1. 抓取 10 個景點
     raw_spots = fetch_city_spots_from_gemini(city, spot_count=TARGET_N)
     if not raw_spots:
         return (
@@ -236,8 +235,7 @@ def plan_trip():
             jsonify({
                 "status": "error",
                 "message": (
-                    f"合格景點數不足 ({N} 個)，少於要求的景點數 ({T_max} 個)，無法執行"
-                    " QUBO。"
+                    f"合格景點數不足 ({N} 個)，少於要求的景點數 ({T_max} 個)，無法執行 QUBO。"
                 ),
             }),
             400,
@@ -374,6 +372,12 @@ def plan_trip():
                 "total_travel_distance_km": round(tot_dist_km, 2),
                 "total_real_time_minutes": int(tot_stay + tot_time_min),
             },
+            # 供前端表格與熱力圖渲染真實 10 個景點資料
+            "all_spots": spots_data,
+            "matrices": {
+                "time_matrix": D_matrix.tolist(),
+                "dist_matrix": Dist_matrix.tolist(),
+            },
             "parameters": {
                 "weights": {
                     "alpha_r": alpha_r,
@@ -394,8 +398,7 @@ def plan_trip():
             jsonify({
                 "status": "warning",
                 "message": (
-                    f"退火未完美收斂（未選滿 {T_max}"
-                    " 個景點），建議嘗試重新呼叫 API 或調整懲罰係數。"
+                    f"退火未完美收斂（未選滿 {T_max} 個景點），建議嘗試重新呼叫 API 或調整懲罰係數。"
                 ),
             }),
             500,
