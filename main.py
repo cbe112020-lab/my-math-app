@@ -3,25 +3,30 @@ import os
 import time
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import google.generativeai as genai  # 使用標準穩定版套件
+from google import genai  # 使用官方最新標準 SDK
+from google.genai import types
 import neal
 import numpy as np
 from pyqubo import Array, Constraint
 import requests
 
 app = Flask(__name__)
-CORS(app)
-# =====================================================================
-# 1. API 金鑰測試配置 (直接填入你的 Key 進行測試)
-# =====================================================================
-# ⚠️ 請在此處填入你的真實 API Key
-AGEMINI_API_KEY = "AQ.Ab8RN6KLGY4L7IMd0eX_OW7xqHK8ROwFbTH3A8olaCuoF6GdbQ"
-AMAPS_API_KEY = "AIzaSyDpQflWzh_2ylE2IxkPY5SSkq9ENzQ2L7I"
+CORS(app)  # 允許 Cross-Origin 跨網域存取
 
-GEMINI_API_KEY = AGEMINI_API_KEY.strip() or os.getenv("GEMINI_API_KEY", "").strip()
-MAPS_API_KEY = AMAPS_API_KEY.strip() or os.getenv("MAPS_API_KEY", "").strip()
+# =====================================================================
+# 1. API 金鑰配置 (優先採用寫死 Key，若為空則讀取環境變數)
+# =====================================================================
+HARDCODED_GEMINI_KEY = "AQ.Ab8RN6KLGY4L7IMd0eX_OW7xqHK8ROwFbTH3A8olaCuoF6GdbQ"
+HARDCODED_MAPS_KEY = "AIzaSyDpQflWzh_2ylE2IxkPY5SSkq9ENzQ2L7I"
 
-# 初始化 Gemini Client
+GEMINI_API_KEY = (
+    HARDCODED_GEMINI_KEY.strip() or os.getenv("GEMINI_API_KEY", "").strip()
+)
+MAPS_API_KEY = (
+    HARDCODED_MAPS_KEY.strip() or os.getenv("MAPS_API_KEY", "").strip()
+)
+
+# 初始化標準 Gemini Client
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 
@@ -39,16 +44,16 @@ def fetch_city_spots_from_gemini(city_name, spot_count=10):
         "不要有任何 Markdown 標籤或額外說明文字。\n"
     )
 
-    # 重試 3 次機制
     for attempt in range(1, 4):
         try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content(
-                prompt,
-                generation_config={"response_mime_type": "application/json"},
+            response = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                ),
             )
             clean_text = response.text.strip()
-
             if clean_text.startswith("```json"):
                 clean_text = clean_text[7:]
             if clean_text.startswith("```"):
