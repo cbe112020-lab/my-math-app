@@ -3,8 +3,6 @@ import os
 import time
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from google import genai
-from google.genai import types
 import neal
 import numpy as np
 from pyqubo import Array, Constraint
@@ -14,26 +12,24 @@ app = Flask(__name__)
 CORS(app)
 
 # =====================================================================
-# 1. API 金鑰配置 (優先讀取環境變數，備用填寫預設 Key)
+# 1. API 金鑰配置 (純 REST API 模式，不依賴 SDK)
 # =====================================================================
 GEMINI_API_KEY = os.getenv(
     "GEMINI_API_KEY",
-    "AQ.Ab8RN6JOGYx741NFx5dEs63n6goX85cXy4-iTQDYMIRHnugNfA",  # 2026 Google AI Studio Key
+    "AQ.Ab8RN6JOGYx741NFx5dEs63n6goX85cXy4-iTQDYMIRHnugNfA",  # 最新 AQ. 開頭 Key
 ).strip()
 
 MAPS_API_KEY = os.getenv(
     "MAPS_API_KEY", "AIzaSyDpQflWzh_2ylE2IxkPY5SSkq9ENzQ2L7I"
 ).strip()
 
-# 初始化 SDK Client (明確將 API Key 設定至環境變數並帶入 Client)
-os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
-client = genai.Client(api_key=GEMINI_API_KEY)
-
 
 # =====================================================================
-# 2. 景點爬取模組 (適配最新 google-genai SDK 規範)
+# 2. 完全跳過 SDK，使用 requests 直連 Gemini REST API
 # =====================================================================
 def fetch_city_spots_from_gemini(city_name, spot_count=14):
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
     prompt = (
         f"請化身為『{city_name}』的在地旅遊專家。\n"
         f"請列出屬於『{city_name}』最著名的 {spot_count} 個旅遊景點、名勝古蹟或觀光景點。\n"
@@ -44,20 +40,41 @@ def fetch_city_spots_from_gemini(city_name, spot_count=14):
         "不要有任何 Markdown 標籤或額外說明文字。\n"
     )
 
-    # 嘗試 1.5-flash 與 2.5-flash 相容模型
-    model_candidates = ["gemini-1.5-flash", "gemini-2.5-flash"]
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"response_mime_type": "application/json"},
+    }
 
-    for model_name in model_candidates:
-        for attempt in range(1, 3):
-            try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json"
-                    ),
-                )
-                clean_text = response.text.strip()
+    # 多重 Header 組合：解決 AQ. 格式在 REST API 下的驗證機制
+    headers_options = [
+        {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {GEMINI_API_KEY}",
+        },
+        {
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY,
+        },
+        {
+            "Content-Type": "application/json",
+        },
+    ]
+
+    for h_idx, headers in enumerate(headers_options):
+        # 模式 3 將 Key 放在 URL 參數
+        request_url = (
+            f"{url}?key={GEMINI_API_KEY}" if h_idx == 2 else url
+        )
+
+        try:
+            res = requests.post(
+                request_url, headers=headers, json=payload, timeout=12
+            )
+            data = res.json()
+
+            if res.status_code == 200:
+                raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                clean_text = raw_text.strip()
                 if clean_text.startswith("```json"):
                     clean_text = clean_text[7:]
                 if clean_text.startswith("```"):
@@ -66,12 +83,14 @@ def fetch_city_spots_from_gemini(city_name, spot_count=14):
                     clean_text = clean_text[:-3]
 
                 return json.loads(clean_text.strip())
-            except Exception as e:
+            else:
+                err_msg = data.get("error", {}).get("message", "Unknown Error")
                 print(
-                    f"⚠️ Gemini API [{model_name}] 第 {attempt} 次呼叫失敗:"
-                    f" {e}"
+                    f"⚠️ REST 驗證模式 {h_idx+1} 失敗 ({res.status_code}):"
+                    f" {err_msg}"
                 )
-                time.sleep(1)
+        except Exception as e:
+            print(f"⚠️ 請求發送異常: {e}")
 
     return None
 
