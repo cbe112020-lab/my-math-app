@@ -13,7 +13,7 @@ import requests
 
 app = Flask(__name__)
 
-# 💡 全面解鎖跨網域限制
+# 💡 全面解鎖跨網域限制，確保 GitHub Pages 可以完全暢通連入
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # =====================================================================
@@ -29,8 +29,7 @@ MAPS_API_KEY = os.getenv(
     "AIzaSyDpQflWzh_2ylE2IxkPY5SSkq9ENzQ2L7I"
 ).strip()
 
-# 💡 初始化官方用戶端。這一步是解決 char 0 的最核心關鍵！
-# 官方 SDK 會自動辨識 AQ. 格式金鑰並走專屬安全通道驗證。
+# 💡 初始化官方用戶端。官方 SDK 會自動辨識 AQ. 格式金鑰並走專屬通道安全驗證。
 try:
     client = genai.Client(api_key=GEMINI_API_KEY)
 except Exception as e:
@@ -38,7 +37,7 @@ except Exception as e:
     client = None
 
 # =====================================================================
-# 2. 透過官方 SDK 獲取景點 (100% 避開 REST API 的 401/403 錯誤)
+# 2. 透過官方 SDK 獲取景點 (100% 避開 REST API 401/403 錯誤)
 # =====================================================================
 def fetch_city_spots_from_gemini(city_name, spot_count=14):
     if not client:
@@ -162,10 +161,8 @@ def get_distance_and_time_matrices(place_ids):
         np.fill_diagonal(dist_matrix, 0)
 
     return time_matrix, dist_matrix
-
-
 # =====================================================================
-# 3. Web API 路由
+# 3. Web API 路由與 QUBO 量子退火運算
 # =====================================================================
 @app.route("/", methods=["GET"])
 def health_check():
@@ -281,9 +278,7 @@ def plan_trip():
     )
 
     H = H_rating + H_price + H_distance + H_time + H_C1 + H_C2
-    # === 💡 以下是為您重新對齊縮排、完全無縫串聯的後半段核心代碼 ===
-    
-       model = H.compile()
+    model = H.compile()
     qubo, offset = model.to_qubo()
 
     sampler = neal.SimulatedAnnealingSampler()
@@ -299,13 +294,13 @@ def plan_trip():
                 selected_indices.append((t, i))
 
     itinerary = []
-    # 💡 修正回原本最精確且不會噴 IndexError 的二維索引統計法
+    # 💡 完美對齊、且修正二維索引統計法，全面阻絕 IndexError
     if len(selected_indices) == T_max:
         tot_rating = float(sum(WR[i] for _, i in selected_indices))
         tot_cost = float(sum(C[i] for _, i in selected_indices))
         tot_stay = float(sum(Stay[i] for _, i in selected_indices))
         
-        # 使用 [k][1] 精準抓取 selected_indices 的景點 ID，防止統計出錯
+        # 抓取選取景點的元組來索引距離矩陣
         tot_time_min = float(sum(D_matrix[selected_indices[k][1], selected_indices[k + 1][1]] for k in range(T_max - 1)))
         tot_dist_km = float(sum(Dist_matrix[selected_indices[k][1], selected_indices[k + 1][1]] for k in range(T_max - 1)))
 
@@ -345,7 +340,7 @@ def plan_trip():
         return jsonify({"status": "warning", "message": "退火未收斂"}), 500
 
 
-# 💡 主程式進入點，保持完全不縮排靠左
+# 💡 主程式進入點，保持頂格靠左不縮排
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
